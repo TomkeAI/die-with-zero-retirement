@@ -1,0 +1,562 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Die with Zero Optimizer</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0a0a0f;
+    color: #fff;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+
+  h1 {
+    font-size: 28px; font-weight: 700; margin-bottom: 4px;
+    background: linear-gradient(90deg, #34d399, #6366f1);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .subtitle {
+    font-size: 13px; color: #666; margin-bottom: 20px;
+  }
+
+  .tagline {
+    background: rgba(52, 211, 153, 0.08);
+    border: 1px solid rgba(52, 211, 153, 0.2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    font-size: 13px;
+    color: #6ee7b7;
+    text-align: center;
+  }
+
+  .sliders-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .sliders-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .sliders-grid { grid-template-columns: 1fr; } }
+
+  .slider-box {
+    background: #12121a;
+    border: 1px solid #1e1e2a;
+    border-radius: 10px;
+    padding: 12px;
+  }
+  .slider-box.target {
+    border-color: rgba(52, 211, 153, 0.4);
+    background: rgba(52, 211, 153, 0.04);
+  }
+  .slider-label {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 8px; font-size: 12px; color: #888;
+  }
+  .slider-label .name { color: #aaa; }
+  .slider-label .value { color: #fff; font-weight: 600; }
+  .slider-container { position: relative; height: 6px; }
+  .slider-track {
+    position: absolute; left: 0; right: 0; top: 50%;
+    transform: translateY(-50%); height: 4px;
+    background: #2a2a3a; border-radius: 2px;
+  }
+  .slider-fill {
+    position: absolute; left: 0; top: 50%;
+    transform: translateY(-50%); height: 4px;
+    background: linear-gradient(90deg, #34d399, #6366f1);
+    border-radius: 2px; transition: width 0.1s;
+  }
+  input[type="range"] {
+    position: absolute; left: 0; top: 50%;
+    transform: translateY(-50%); width: 100%;
+    -webkit-appearance: none; height: 20px;
+    background: transparent; cursor: pointer;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 16px; height: 16px;
+    background: #fff; border-radius: 50%;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer;
+  }
+  .slider-minmax {
+    display: flex; justify-content: space-between;
+    margin-top: 4px; font-size: 10px; color: #555;
+  }
+
+  .info-box {
+    background: rgba(99, 102, 241, 0.08);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    border-radius: 8px;
+    padding: 10px 16px;
+    margin-bottom: 20px;
+    font-size: 12px;
+    color: #a5b4fc;
+    text-align: center;
+  }
+
+  .result-cards {
+    display: grid; grid-template-columns: repeat(5, 1fr);
+    gap: 12px; margin-bottom: 20px;
+  }
+  @media (max-width: 900px) { .result-cards { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 500px) { .result-cards { grid-template-columns: repeat(2, 1fr); } }
+
+  .result-card {
+    background: #12121a;
+    border: 1px solid #1e1e2a;
+    border-radius: 10px;
+    padding: 14px;
+    text-align: center;
+  }
+  .result-card .label {
+    font-size: 11px; color: #666;
+    text-transform: uppercase; letter-spacing: 0.5px;
+    margin-bottom: 6px;
+  }
+  .result-card .number {
+    font-size: 22px; font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .result-card .number.green { color: #34d399; }
+  .result-card .number.purple { color: #a78bfa; }
+  .result-card .number.orange { color: #fb923c; }
+  .result-card .number.teal { color: #2dd4bf; }
+  .result-card .number.red { color: #f87171; }
+  .result-card .unit {
+    font-size: 11px; color: #555; margin-top: 4px;
+  }
+
+  .chart-wrap {
+    background: #12121a;
+    border: 1px solid #1e1e2a;
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .chart-wrap canvas {
+    width: 100% !important;
+    height: 300px !important;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Die with Zero</h1>
+  <div class="subtitle">以中位期末余额为目标，反推最优本金</div>
+
+  <div class="tagline" id="tagline">
+    调整参数，让钱刚好花完
+  </div>
+
+  <div class="sliders-grid">
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Age</span><span class="value" id="ageVal">46</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="ageFill"></div>
+        <input type="range" id="age" min="30" max="65" value="46" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>30</span><span>65</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Life</span><span class="value" id="lifeVal">78</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="lifeFill"></div>
+        <input type="range" id="life" min="65" max="95" value="78" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>65</span><span>95</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Capital gain rate</span><span class="value" id="gainVal">10%</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="gainFill"></div>
+        <input type="range" id="gain" min="0" max="15" value="10" step="0.5" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>0%</span><span>15%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Volatility</span><span class="value" id="volVal">25%</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="volFill"></div>
+        <input type="range" id="vol" min="5" max="40" value="25" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>5%</span><span>40%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Go-Go annual</span><span class="value" id="goGoVal">¥9w</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="goGoFill"></div>
+        <input type="range" id="goGo" min="3" max="25" value="9" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>¥3w</span><span>¥25w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Slow-Go annual</span><span class="value" id="slowGoVal">¥6w</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="slowGoFill"></div>
+        <input type="range" id="slowGo" min="2" max="20" value="6" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>¥2w</span><span>¥20w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Dividend yield</span><span class="value" id="divYieldVal">1%</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="divYieldFill"></div>
+        <input type="range" id="divYield" min="0" max="8" value="1" step="0.5" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>0%</span><span>8%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Inflation</span><span class="value" id="inflationVal">3%</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="inflationFill"></div>
+        <input type="range" id="inflation" min="0" max="8" value="3" step="0.5" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>0%</span><span>8%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Pension amount</span><span class="value" id="pensionVal">¥5w</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="pensionFill"></div>
+        <input type="range" id="pension" min="0" max="15" value="5" step="0.5" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>¥0w</span><span>¥15w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Pension start</span><span class="value" id="pensionStartVal">60</span></div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="pensionStartFill"></div>
+        <input type="range" id="pensionStart" min="50" max="70" value="60" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>50</span><span>70</span></div>
+    </div>
+    <div class="slider-box target">
+      <div class="slider-label">
+        <span class="name">🎯 Target end balance</span>
+        <span class="value" id="targetVal">¥0w</span>
+      </div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="targetFill"></div>
+        <input type="range" id="target" min="-50" max="200" value="0" step="5" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>-¥50w</span><span>¥200w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label">
+        <span class="name">Success rate target</span>
+        <span class="value" id="srTargetVal">90%</span>
+      </div>
+      <div class="slider-container">
+        <div class="slider-track"></div><div class="slider-fill" id="srTargetFill"></div>
+        <input type="range" id="srTarget" min="30" max="99" value="90" step="1" oninput="update()">
+      </div>
+      <div class="slider-minmax"><span>30%</span><span>99%</span></div>
+    </div>
+  </div>
+
+  <div class="info-box">
+    两个约束同时作用：中位期末余额匹配目标 <span id="targetDisplay">0</span>w，且成功率 ≥ <span id="srDisplay">90</span>%。<br>
+    取两者所需本金的较大值，从而哪个约束更严格就以哪个为准。
+  </div>
+
+  <div class="result-cards">
+    <div class="result-card">
+      <div class="label">Required principal</div>
+      <div class="number green" id="needValue">—</div>
+      <div class="unit">万元</div>
+    </div>
+    <div class="result-card">
+      <div class="label">Success rate</div>
+      <div class="number purple" id="successValue">—</div>
+      <div class="unit">%（目标 ≥ <span id="srCardTarget">90</span>%）</div>
+    </div>
+    <div class="result-card">
+      <div class="label">Actual P50 end</div>
+      <div class="number orange" id="p50Value">—</div>
+      <div class="unit">万元（目标 <span id="targetCard">¥0</span>w）</div>
+    </div>
+    <div class="result-card">
+      <div class="label">Dividend / year</div>
+      <div class="number teal" id="divValue">—</div>
+      <div class="unit">万元（年均）</div>
+    </div>
+    <div class="result-card">
+      <div class="label">Pension total</div>
+      <div class="number" id="pensionValue" style="color:#f472b6">—</div>
+      <div class="unit">万元（累计）</div>
+    </div>
+  </div>
+
+  <div class="chart-wrap">
+    <canvas id="chart"></canvas>
+  </div>
+</div>
+
+<script>
+let chart = null;
+
+const $ = id => document.getElementById(id);
+
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function getParams() {
+  return {
+    age: +$('age').value,
+    life: +$('life').value,
+    gain: +$('gain').value / 100,
+    vol: +$('vol').value / 100,
+    goGo: +$('goGo').value,
+    slowGo: +$('slowGo').value,
+    divYield: +$('divYield').value / 100,
+    inflation: +$('inflation').value / 100,
+    pension: +$('pension').value,
+    pensionStart: +$('pensionStart').value,
+    target: +$('target').value,
+    srTarget: +$('srTarget').value
+  };
+}
+
+function getSpending(age, p) {
+  const midAge = (p.age + p.life) / 2;
+  const base = age <= midAge ? p.goGo : p.slowGo;
+  return base * Math.pow(1 + p.inflation, age - p.age);
+}
+
+function getPension(age, p) {
+  return age >= p.pensionStart ? p.pension : 0;
+}
+
+// Run N simulations at given principal, return array of end balances + paths
+function runSims(p, principal, count) {
+  const years = p.life - p.age;
+  const divBase = principal * p.divYield;  // fixed dividend at start
+  const ends = [];
+  const yearPaths = Array.from({length: years + 1}, () => []);
+  let totalDiv = 0;
+
+  for (let sim = 0; sim < count; sim++) {
+    let bal = principal;
+    let simDiv = 0;
+    yearPaths[0].push(bal);
+
+    for (let y = 0; y < years; y++) {
+      const ca = p.age + y;
+      const cg = randn() * p.vol + p.gain;
+      const dc = divBase * Math.pow(1 + p.inflation, y);  // dividend grows with inflation
+      simDiv += dc;
+      const sp = getSpending(ca, p);
+      const pe = getPension(ca, p);
+      bal = bal * (1 + cg) - Math.max(0, sp - pe - dc);
+      if (bal < 0) bal = 0;
+      yearPaths[y + 1].push(bal);
+    }
+    ends.push(bal);
+    totalDiv += simDiv;
+  }
+
+  return { ends, yearPaths, avgAnnualDiv: totalDiv / count / years };
+}
+
+// Binary search for P50 end balance target
+function findP50Principal(p) {
+  let lo = 0, hi = 5000;
+  for (let iter = 0; iter < 18; iter++) {
+    const mid = (lo + hi) / 2;
+    const { ends } = runSims(p, mid, 80);
+    ends.sort((a,b) => a-b);
+    const p50 = ends[40];
+    if (Math.abs(p50 - p.target) < 1) break;
+    if (p50 > p.target) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Binary search for success rate target
+function findSRPrincipal(p) {
+  let lo = 0, hi = 5000;
+  const targetRatio = p.srTarget / 100;
+  for (let iter = 0; iter < 18; iter++) {
+    const mid = (lo + hi) / 2;
+    const { ends } = runSims(p, mid, 80);
+    const sr = ends.filter(v => v > 0).length / 80;
+    if (Math.abs(sr - targetRatio) < 0.02) break;
+    if (sr > targetRatio) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+// Dual-constraint: take max of both searches
+function findPrincipal(p) {
+  const prinP50 = findP50Principal(p);
+  const prinSR = findSRPrincipal(p);
+  return { principal: Math.max(prinP50, prinSR), prinP50, prinSR };
+}
+
+function runFull(p, principal) {
+  const SIMS = 600;
+  const { ends, yearPaths, avgAnnualDiv } = runSims(p, principal, SIMS);
+  
+  // Sort ends
+  ends.sort((a,b) => a-b);
+  const successes = ends.filter(v => v > 0).length;
+  const p50 = ends[Math.floor(SIMS / 2)];
+  const p10 = ends[Math.floor(SIMS * 0.1)];
+  const p90 = ends[Math.floor(SIMS * 0.9)];
+
+  // Percentile paths
+  const pctPaths = {};
+  [10, 25, 50, 75, 90].forEach(pct => {
+    pctPaths[pct] = yearPaths.map(arr => {
+      const s = [...arr].sort((a,b) => a-b);
+      const idx = Math.floor(s.length * pct / 100);
+      return s[Math.min(idx, s.length - 1)];
+    });
+  });
+
+  const totalPension = Array.from({length: p.life - p.age}, (_, y) =>
+    getPension(p.age + y, p)
+  ).reduce((a,b) => a+b, 0);
+
+  return {
+    principal: Math.round(principal),
+    successRate: successes / SIMS * 100,
+    p50, p10, p90,
+    pctPaths,
+    avgAnnualDiv,
+    totalPension
+  };
+}
+
+function drawChart(p, result) {
+  if (chart) chart.destroy();
+
+  const labels = [];
+  for (let i = 0; i <= p.life - p.age; i++) labels.push(p.age + i);
+
+  const ds = [
+    { label: 'P90', data: result.pctPaths[90], borderColor: 'rgba(236,72,153,0.3)', backgroundColor: 'rgba(236,72,153,0.1)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P75', data: result.pctPaths[75], borderColor: 'rgba(236,72,153,0.4)', backgroundColor: 'rgba(236,72,153,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P50', data: result.pctPaths[50], borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.2)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 2.5 },
+    { label: 'P25', data: result.pctPaths[25], borderColor: 'rgba(59,130,246,0.4)', backgroundColor: 'rgba(59,130,246,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P10', data: result.pctPaths[10], borderColor: 'rgba(59,130,246,0.3)', backgroundColor: 'rgba(59,130,246,0.1)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+  ];
+
+  // Zero line annotation
+  const zeroLine = { label: 'Zero', data: Array(labels.length).fill(0), borderColor: 'rgba(255,69,58,0.4)', borderDash: [4,4], pointRadius: 0, borderWidth: 1, fill: false };
+  if (Math.min(...result.pctPaths[10]) <= 50) ds.push(zeroLine);
+
+  const ctx = $('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#9aa0b0', font: { size: 10 } } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ¥${ctx.raw.toFixed(0)}w` } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 }, callback: v => '¥' + v + 'w' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function updateSliderFill(id, min, max) {
+  const el = $(id);
+  const fill = $(id + 'Fill');
+  fill.style.width = ((el.value - min) / (max - min) * 100) + '%';
+}
+
+function formatMoney(n) {
+  return '¥' + Math.round(n) + 'w';
+}
+
+function update() {
+  const p = getParams();
+
+  // Slider fills
+  updateSliderFill('age', 30, 65);
+  updateSliderFill('life', 65, 95);
+  updateSliderFill('gain', 0, 15);
+  updateSliderFill('vol', 5, 40);
+  updateSliderFill('goGo', 3, 25);
+  updateSliderFill('slowGo', 2, 20);
+  updateSliderFill('divYield', 0, 8);
+  updateSliderFill('inflation', 0, 8);
+  updateSliderFill('pension', 0, 15);
+  updateSliderFill('pensionStart', 50, 70);
+  updateSliderFill('target', -50, 200);
+  updateSliderFill('srTarget', 30, 99);
+
+  // Display values
+  $('ageVal').textContent = p.age;
+  $('lifeVal').textContent = p.life;
+  $('gainVal').textContent = (p.gain * 100).toFixed(1) + '%';
+  $('volVal').textContent = (p.vol * 100).toFixed(0) + '%';
+  $('goGoVal').textContent = '¥' + p.goGo + 'w';
+  $('slowGoVal').textContent = '¥' + p.slowGo + 'w';
+  $('divYieldVal').textContent = (p.divYield * 100).toFixed(1) + '%';
+  $('inflationVal').textContent = (p.inflation * 100).toFixed(1) + '%';
+  $('pensionVal').textContent = '¥' + p.pension + 'w';
+  $('pensionStartVal').textContent = p.pensionStart;
+  $('targetVal').textContent = '¥' + p.target + 'w';
+  $('targetDisplay').textContent = p.target;
+  $('srTargetVal').textContent = p.srTarget + '%';
+  $('srDisplay').textContent = p.srTarget;
+  $('srCardTarget').textContent = p.srTarget;
+  $('targetCard').textContent = '¥' + p.target + 'w';
+
+  // Find principal (dual constraint)
+  const { principal, prinP50, prinSR } = findPrincipal(p);
+  const result = runFull(p, principal);
+
+  // Cards
+  $('needValue').textContent = formatMoney(result.principal);
+  $('successValue').textContent = result.successRate.toFixed(0);
+  const srMet = result.successRate >= p.srTarget;
+  $('successValue').style.color = srMet ? '#34d399' : '#f87171';
+  $('p50Value').textContent = '¥' + Math.round(result.p50) + 'w';
+  const p50Met = Math.abs(result.p50 - p.target) <= (p.target === 0 ? 10 : Math.max(10, Math.abs(p.target) * 0.2));
+  $('p50Value').style.color = p50Met ? '#34d399' : '#fb923c';
+  $('divValue').textContent = '¥' + result.avgAnnualDiv.toFixed(1) + 'w';
+  $('pensionValue').textContent = formatMoney(result.totalPension);
+
+  // Determine binding constraint
+  const binding = prinP50 >= prinSR ? 'P50余额目标' : '成功率目标';
+  const p50Shortfall = result.p50 - p.target;
+  const srShortfall = result.successRate - p.srTarget;
+
+  // Tagline
+  let tag = '';
+  if (srMet && p50Met) {
+    if (p.target === 0 && result.p50 <= 3) tag = '两个目标同时达成 ✅ 本金由「' + binding + '」决定，Die with Zero 完美达成。';
+    else tag = '两个目标同时达成 ✅ 本金由「' + binding + '」决定。';
+  } else if (!srMet && !p50Met) {
+    tag = '两个目标均未达标 ⚠ P50 差 ' + Math.abs(p50Shortfall).toFixed(0) + 'w，成功率高目标 ' + Math.abs(srShortfall).toFixed(0) + ' 个百分点。参数组合可能需要调整。';
+  } else if (!srMet) {
+    tag = '成功率目标未达标 ⚠ 实际 ' + result.successRate.toFixed(0) + '% < 目标 ' + p.srTarget + '%。P50 目标已达成。';
+  } else {
+    tag = 'P50 余额目标未达标 ⚠ 实际 ¥' + Math.round(result.p50) + 'w，目标 ¥' + p.target + 'w。成功率目标已达成。';
+  }
+  $('tagline').textContent = tag;
+
+  drawChart(p, result);
+}
+
+setTimeout(update, 100);
+</script>
+</body>
+</html>
