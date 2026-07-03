@@ -1,0 +1,490 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dynamic Spending Retirement</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #0a0a0f;
+    color: #fff;
+    padding: 24px;
+    min-height: 100vh;
+  }
+  .container { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px;
+    background: linear-gradient(90deg, #f59e0b, #6366f1);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .subtitle { font-size: 13px; color: #666; margin-bottom: 20px; }
+
+  .mode-toggle { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px; }
+  .mode-btn {
+    padding: 12px 24px; border: 1px solid #2a2a3a; background: #12121a;
+    color: #888; font-size: 14px; font-weight: 500; border-radius: 8px; cursor: pointer; transition: all 0.2s;
+  }
+  .mode-btn.active { background: linear-gradient(135deg, #f59e0b, #6366f1); color: #fff; border-color: transparent; }
+  .mode-btn:hover:not(.active) { border-color: #444; color: #ccc; }
+
+  .sliders-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .sliders-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 500px) { .sliders-grid { grid-template-columns: 1fr; } }
+  .slider-box { background: #12121a; border: 1px solid #1e1e2a; border-radius: 10px; padding: 12px; }
+  .slider-box.dynamic { border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.04); }
+  .slider-box.fixed { border-color: rgba(99, 102, 241, 0.4); background: rgba(99, 102, 241, 0.04); }
+  .slider-label { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; font-size: 12px; color: #888; }
+  .slider-label .name { color: #aaa; } .slider-label .value { color: #fff; font-weight: 600; }
+  .slider-container { position: relative; height: 6px; }
+  .slider-track { position: absolute; left: 0; right: 0; top: 50%; transform: translateY(-50%); height: 4px; background: #2a2a3a; border-radius: 2px; }
+  .slider-fill { position: absolute; left: 0; top: 50%; transform: translateY(-50%); height: 4px; background: linear-gradient(90deg, #f59e0b, #6366f1); border-radius: 2px; transition: width 0.1s; }
+  input[type="range"] { position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 100%; -webkit-appearance: none; height: 20px; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; width: 16px; height: 16px; background: #fff; border-radius: 50%; box-shadow: 0 2px 6px rgba(0,0,0,0.4); cursor: pointer; }
+  .slider-minmax { display: flex; justify-content: space-between; margin-top: 4px; font-size: 10px; color: #555; }
+
+  .info-box {
+    background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2);
+    border-radius: 8px; padding: 10px 16px; margin-bottom: 20px; font-size: 12px; color: #fbbf24; text-align: center; 
+  }
+  .info-box.fixed-mode { background: rgba(99, 102, 241, 0.08); border-color: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+
+  .result-cards { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 20px; }
+  @media (max-width: 900px) { .result-cards { grid-template-columns: repeat(3, 1fr); } }
+  @media (max-width: 500px) { .result-cards { grid-template-columns: repeat(2, 1fr); } }
+  .result-card { background: #12121a; border: 1px solid #1e1e2a; border-radius: 10px; padding: 14px; text-align: center; }
+  .result-card .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 6px; }
+  .result-card .number { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .result-card .number.green { color: #34d399; } .result-card .number.purple { color: #a78bfa; } .result-card .number.orange { color: #fb923c; } .result-card .number.teal { color: #2dd4bf; } .result-card .number.red { color: #f87171; } .result-card .number.amber { color: #fbbf24; }
+  .result-card .unit { font-size: 11px; color: #555; margin-top: 4px; }
+
+  .chart-wrap { background: #12121a; border: 1px solid #1e1e2a; border-radius: 10px; padding: 20px; }
+  .chart-wrap canvas { width: 100% !important; height: 300px !important; }
+
+  .dwz-hint { background: rgba(52, 211, 153, 0.08); border: 1px solid rgba(52, 211, 153, 0.2); border-radius: 8px; padding: 10px 16px; margin-top: 20px; font-size: 12px; color: #6ee7b7; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Dynamic Spending</h1>
+  <div class="subtitle">熊市少花，牛市多花 —— Guardrails 动态支出策略</div>
+
+  <div class="mode-toggle">
+    <button class="mode-btn active" data-mode="fixed" onclick="setMode('fixed')">Fixed 固定支出</button>
+    <button class="mode-btn" data-mode="dynamic" onclick="setMode('dynamic')">Dynamic 动态支出</button>
+  </div>
+
+  <div class="sliders-grid">
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Age</span><span class="value" id="ageVal">46</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="ageFill"></div><input type="range" id="age" min="30" max="65" value="46" oninput="update()"></div>
+      <div class="slider-minmax"><span>30</span><span>65</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Life</span><span class="value" id="lifeVal">78</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="lifeFill"></div><input type="range" id="life" min="65" max="95" value="78" oninput="update()"></div>
+      <div class="slider-minmax"><span>65</span><span>95</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Capital gain rate</span><span class="value" id="gainVal">10%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="gainFill"></div><input type="range" id="gain" min="0" max="15" value="10" step="0.5" oninput="update()"></div>
+      <div class="slider-minmax"><span>0%</span><span>15%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Volatility</span><span class="value" id="volVal">25%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="volFill"></div><input type="range" id="vol" min="5" max="40" value="25" oninput="update()"></div>
+      <div class="slider-minmax"><span>5%</span><span>40%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Go-Go annual</span><span class="value" id="goGoVal">¥9w</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="goGoFill"></div><input type="range" id="goGo" min="3" max="25" value="9" oninput="update()"></div>
+      <div class="slider-minmax"><span>¥3w</span><span>¥25w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Slow-Go annual</span><span class="value" id="slowGoVal">¥6w</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="slowGoFill"></div><input type="range" id="slowGo" min="2" max="20" value="6" oninput="update()"></div>
+      <div class="slider-minmax"><span>¥2w</span><span>¥20w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Dividend yield</span><span class="value" id="divYieldVal">1%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="divYieldFill"></div><input type="range" id="divYield" min="0" max="8" value="1" step="0.5" oninput="update()"></div>
+      <div class="slider-minmax"><span>0%</span><span>8%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Inflation</span><span class="value" id="inflationVal">3%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="inflationFill"></div><input type="range" id="inflation" min="0" max="8" value="3" step="0.5" oninput="update()"></div>
+      <div class="slider-minmax"><span>0%</span><span>8%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Pension amount</span><span class="value" id="pensionVal">¥5w</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="pensionFill"></div><input type="range" id="pension" min="0" max="15" value="5" step="0.5" oninput="update()"></div>
+      <div class="slider-minmax"><span>¥0w</span><span>¥15w</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Pension start</span><span class="value" id="pensionStartVal">60</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="pensionStartFill"></div><input type="range" id="pensionStart" min="50" max="70" value="60" oninput="update()"></div>
+      <div class="slider-minmax"><span>50</span><span>70</span></div>
+    </div>
+    <div class="slider-box dynamic" id="guardrailSlider">
+      <div class="slider-label"><span class="name">Guardrails width</span><span class="value" id="guardrailVal">±20%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="guardrailFill"></div><input type="range" id="guardrail" min="5" max="40" value="20" step="1" oninput="update()"></div>
+      <div class="slider-minmax"><span>±5%</span><span>±40%</span></div>
+    </div>
+    <div class="slider-box dynamic" id="flexSlider">
+      <div class="slider-label"><span class="name">Adjustment rate</span><span class="value" id="flexVal">10%</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="flexFill"></div><input type="range" id="flex" min="2" max="25" value="10" step="1" oninput="update()"></div>
+      <div class="slider-minmax"><span>2%</span><span>25%</span></div>
+    </div>
+    <div class="slider-box">
+      <div class="slider-label"><span class="name">Cash bucket</span><span class="value" id="cashBucketVal">0.5 年</span></div>
+      <div class="slider-container"><div class="slider-track"></div><div class="slider-fill" id="cashBucketFill"></div><input type="range" id="cashBucket" min="0" max="300" value="50" step="10" oninput="update()"></div>
+      <div class="slider-minmax"><span>0 年</span><span>3 年</span></div>
+    </div>
+  </div>
+
+  <div class="info-box" id="strategyInfo">
+    固定支出模式：每年按通胀调整支出，不考虑市场表现。
+  </div>
+
+  <div class="result-cards">
+    <div class="result-card"><div class="label">90% confidence need</div><div class="number green" id="needValue">—</div><div class="unit">万元</div></div>
+    <div class="result-card"><div class="label">Success rate</div><div class="number purple" id="successValue">—</div><div class="unit">%</div></div>
+    <div class="result-card"><div class="label">Dividend / year</div><div class="number teal" id="divValue">—</div><div class="unit">万元（年均）</div></div>
+    <div class="result-card"><div class="label">Avg spending</div><div class="number amber" id="avgSpendValue">—</div><div class="unit">万元（退休期年均）</div></div>
+    <div class="result-card"><div class="label">Pension total</div><div class="number" id="pensionValue" style="color:#f472b6">—</div><div class="unit">万元（累计）</div></div>
+  </div>
+
+  <div class="chart-wrap"><canvas id="chart"></canvas></div>
+
+  <div class="dwz-hint" id="dwzHint">
+    <span id="dwzText">调整参数查看动态支出效果</span>
+  </div>
+</div>
+
+<script>
+let chart = null, mode = 'fixed';
+
+const $ = id => document.getElementById(id);
+
+function randn() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+}
+
+function getParams() {
+  return {
+    age: +$('age').value, life: +$('life').value,
+    gain: +$('gain').value / 100, vol: +$('vol').value / 100,
+    goGo: +$('goGo').value, slowGo: +$('slowGo').value,
+    divYield: +$('divYield').value / 100, inflation: +$('inflation').value / 100,
+    pension: +$('pension').value, pensionStart: +$('pensionStart').value,
+    guardrail: +$('guardrail').value / 100, flex: +$('flex').value / 100,
+    cashBucketYears: +$('cashBucket').value / 100
+  };
+}
+
+function getBaseSpend(age, p) {
+  const midAge = (p.age + p.life) / 2;
+  return age <= midAge ? p.goGo : p.slowGo;
+}
+
+function getPension(age, p) {
+  return age >= p.pensionStart ? p.pension : 0;
+}
+
+// Guardrails dynamic spending
+function calcDynamicSpend(prevSpend, baseSpend, bal, prevBal, p, yearsSinceRetire) {
+  const inflFactor = Math.pow(1 + p.inflation, yearsSinceRetire);
+  const initialBase = baseSpend * inflFactor;
+  // Default: inflation-adjusted previous spend
+  let thisSpend = prevSpend * (1 + p.inflation);
+  
+  // Performance trigger compared to previous balance
+  if (prevBal > 0 && bal > 0) {
+    const perf = (bal - prevBal) / prevBal;
+    if (perf > p.guardrail) {
+      thisSpend = thisSpend * (1 + p.flex);  // bull market: spend more
+    } else if (perf < -p.guardrail) {
+      thisSpend = thisSpend * (1 - p.flex);  // bear market: spend less
+    }
+  }
+  
+  // Ceiling: never exceed 125% of initial base
+  const ceiling = initialBase * 1.25;
+  // Floor: never go below 75% of initial base
+  const floor = initialBase * 0.75;
+  
+  thisSpend = Math.max(floor, Math.min(ceiling, thisSpend));
+  return thisSpend;
+}
+
+// Run a single MC simulation (return { path, end, spent, avgDiv })
+function runOneSim(p, principal) {
+  const years = p.life - p.age;
+  const initialSpend = getBaseSpend(p.age, p);
+  const initialCash = p.cashBucketYears * initialSpend;
+  let invest = Math.max(0, principal - initialCash);
+  let cash = Math.min(principal, initialCash);
+  const path = [principal];
+  let totalDiv = 0, totalSpent = 0, retireYears = 0;
+  let dynamicSpend = null;
+
+  let prevInvest = invest;
+  const initialDiv = invest * p.divYield;  // fixed dividend at start, grows independently of stock price
+  for (let y = 0; y < years; y++) {
+    const ca = p.age + y;
+
+    // 1. Both investment and cash earn returns
+    const cg = randn() * p.vol + p.gain;
+    invest *= (1 + cg);
+    cash *= (1 + 0.02);  // cash earns money-market returns (~2%)
+
+    // 2. Dividend income (goes into cash bucket)
+    // Dividends are based on initial investment and grow with inflation,
+    // NOT based on current market value (companies don't cut dividends when stock price drops)
+    const divCash = initialDiv * Math.pow(1 + p.inflation, y);
+    totalDiv += divCash;
+    cash += divCash;
+
+    // 3. Pension income (goes into cash bucket)
+    const pens = getPension(ca, p);
+    cash += pens;
+
+    // 4. Calculate required spending
+    let spend;
+    if (ca >= p.age) {
+      const base = getBaseSpend(ca, p);
+      const inflFactor = Math.pow(1 + p.inflation, y);
+      const nominalBase = base * inflFactor;
+
+      if (mode === 'fixed') {
+        spend = nominalBase;
+      } else {
+        if (dynamicSpend === null) {
+          dynamicSpend = nominalBase;
+        } else {
+          dynamicSpend = calcDynamicSpend(dynamicSpend, getBaseSpend(ca - 1, p), invest, prevInvest, p, y - 1);
+        }
+        spend = dynamicSpend;
+      }
+    } else {
+      spend = 0;
+    }
+    prevInvest = invest;
+
+    // 5. Spend from cash bucket first; only sell investments if cash runs out
+    if (cash >= spend) {
+      cash -= spend;
+    } else {
+      const short = spend - cash;
+      cash = 0;
+      invest -= short;  // forced sale
+    }
+
+    // 6. Refill cash bucket in good years
+    if (p.cashBucketYears > 0) {
+      const targetCash = p.cashBucketYears * getBaseSpend(ca, p) * Math.pow(1 + p.inflation, Math.max(0, y));
+      if (cg > 0 && cash < targetCash && invest > 0) {
+        const refill = Math.min(targetCash - cash, invest * 0.15);
+        cash += refill;
+        invest -= refill;
+      }
+    }
+
+    // 7. Track totals
+    const total = Math.max(0, invest + cash);
+    path.push(total);
+    if (invest < 0) invest = 0;
+    if (cash < 0) cash = 0;
+
+    if (ca >= Math.max(p.pensionStart, p.age)) {
+      totalSpent += spend;
+      retireYears++;
+    }
+  }
+
+  return {
+    end: path[path.length - 1],
+    path,
+    totalDiv,
+    avgSpend: retireYears > 0 ? totalSpent / retireYears : 0,
+    survived: path[path.length - 1] > 0
+  };
+}
+
+function findNeededPrincipal(p) {
+  let lo = 0, hi = 5000;
+  for (let iter = 0; iter < 20; iter++) {
+    const mid = (lo + hi) / 2;
+    let successes = 0;
+    for (let s = 0; s < 80; s++) {
+      const { survived } = runOneSim(p, mid);
+      if (survived) successes++;
+    }
+    if (successes >= 72) hi = mid;
+    else lo = mid;
+  }
+  return (lo + hi) / 2;
+}
+
+function runFull(p, principal) {
+  const SIMS = 600, years = p.life - p.age;
+  const yearPaths = Array.from({length: years + 1}, () => []);
+  let successes = 0, totalDiv = 0, totalAvgSpend = 0;
+
+  for (let s = 0; s < SIMS; s++) {
+    const sim = runOneSim(p, principal);
+    successes += sim.survived ? 1 : 0;
+    totalDiv += sim.totalDiv;
+    totalAvgSpend += sim.avgSpend;
+    sim.path.forEach((v, i) => yearPaths[i].push(v));
+  }
+
+  const pctPaths = {};
+  [10, 25, 50, 75, 90].forEach(pct => {
+    pctPaths[pct] = yearPaths.map(arr => {
+      const sorted = [...arr].sort((a,b) => a-b);
+      return sorted[Math.min(Math.floor(sorted.length * pct / 100), sorted.length - 1)];
+    });
+  });
+
+  const totalPension = Array.from({length: years}, (_, y) => getPension(p.age + y, p)).reduce((a,b) => a+b, 0);
+
+  return {
+    principal: Math.round(principal),
+    successRate: successes / SIMS * 100,
+    pctPaths,
+    avgAnnualDiv: totalDiv / SIMS / years,
+    avgAnnualSpend: totalAvgSpend / SIMS,
+    totalPension
+  };
+}
+
+function drawChart(p, result) {
+  if (chart) chart.destroy();
+  const labels = Array.from({length: p.life - p.age + 1}, (_, i) => p.age + i);
+
+  const ds = [
+    { label: 'P90', data: result.pctPaths[90], borderColor: 'rgba(236,72,153,0.3)', backgroundColor: 'rgba(236,72,153,0.1)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P75', data: result.pctPaths[75], borderColor: 'rgba(236,72,153,0.4)', backgroundColor: 'rgba(236,72,153,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P50', data: result.pctPaths[50], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.2)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 2.5 },
+    { label: 'P25', data: result.pctPaths[25], borderColor: 'rgba(59,130,246,0.4)', backgroundColor: 'rgba(59,130,246,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+    { label: 'P10', data: result.pctPaths[10], borderColor: 'rgba(59,130,246,0.3)', backgroundColor: 'rgba(59,130,246,0.1)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1 },
+  ];
+
+  const ctx = $('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line', data: { labels, datasets: ds },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#9aa0b0', font: { size: 10 } } },
+        tooltip: { callbacks: { label: ctx => `${ctx.dataset.label}: ¥${ctx.raw.toFixed(0)}w` } }
+      },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 }, callback: v => '¥' + v + 'w' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function updateSliderFill(id, min, max) {
+  const el = $(id);
+  $(id + 'Fill').style.width = ((el.value - min) / (max - min) * 100) + '%';
+}
+
+function formatMoney(n) { return '¥' + Math.round(n) + 'w'; }
+
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll('.mode-btn').forEach(b => b.classList.toggle('active', b.dataset.mode === m));
+  $('guardrailSlider').style.display = m === 'dynamic' ? '' : 'none';
+  $('flexSlider').style.display = m === 'dynamic' ? '' : 'none';
+  update();
+}
+
+function update() {
+  const p = getParams();
+  
+  updateSliderFill('age', 30, 65); updateSliderFill('life', 65, 95);
+  updateSliderFill('gain', 0, 15); updateSliderFill('vol', 5, 40);
+  updateSliderFill('goGo', 3, 25); updateSliderFill('slowGo', 2, 20);
+  updateSliderFill('divYield', 0, 8); updateSliderFill('inflation', 0, 8);
+  updateSliderFill('pension', 0, 15); updateSliderFill('pensionStart', 50, 70);
+  updateSliderFill('guardrail', 5, 40); updateSliderFill('flex', 2, 25);
+  updateSliderFill('cashBucket', 0, 300);
+
+  $('ageVal').textContent = p.age; $('lifeVal').textContent = p.life;
+  $('gainVal').textContent = (p.gain * 100).toFixed(1) + '%';
+  $('volVal').textContent = (p.vol * 100).toFixed(0) + '%';
+  $('goGoVal').textContent = '¥' + p.goGo + 'w';
+  $('slowGoVal').textContent = '¥' + p.slowGo + 'w';
+  $('divYieldVal').textContent = (p.divYield * 100).toFixed(1) + '%';
+  $('inflationVal').textContent = (p.inflation * 100).toFixed(1) + '%';
+  $('pensionVal').textContent = '¥' + p.pension + 'w';
+  $('pensionStartVal').textContent = p.pensionStart;
+  $('guardrailVal').textContent = '±' + (p.guardrail * 100).toFixed(0) + '%';
+  $('flexVal').textContent = (p.flex * 100).toFixed(0) + '%';
+  $('cashBucketVal').textContent = p.cashBucketYears.toFixed(1) + ' 年';
+
+  if (mode === 'fixed') {
+    $('strategyInfo').className = 'info-box fixed-mode';
+    const cashNote = p.cashBucketYears > 0 ? '现金桶 ' + p.cashBucketYears.toFixed(1) + ' 年支出（首年不卖股）。' : '';
+    $('strategyInfo').textContent = '固定支出 + ' + cashNote + '每年按通胀 ¥' + (p.inflation * 100).toFixed(0) + '% 调整支出。';
+  } else {
+    $('strategyInfo').className = 'info-box';
+    const cashNote = p.cashBucketYears > 0 ? '现金桶 ' + p.cashBucketYears.toFixed(1) + ' 年支出缓冲，' : '';
+    $('strategyInfo').textContent = '动态支出 + ' + cashNote + '当年收益 > ±' + (p.guardrail * 100).toFixed(0) + '% 时支出 ±' + (p.flex * 100).toFixed(0) + '%。熊市少卖，牛年补桶。';
+  }
+
+  const needed = findNeededPrincipal(p);
+  const result = runFull(p, needed);
+
+  $('needValue').textContent = formatMoney(result.principal);
+  $('successValue').textContent = result.successRate.toFixed(0);
+  $('divValue').textContent = '¥' + result.avgAnnualDiv.toFixed(1) + 'w';
+  $('avgSpendValue').textContent = '¥' + result.avgAnnualSpend.toFixed(1) + 'w';
+  $('pensionValue').textContent = formatMoney(result.totalPension);
+
+  // DWZ hint
+  const endVals = result.pctPaths[50];
+  const medEnd = endVals[endVals.length - 1];
+  const p50Spend = result.avgAnnualSpend;
+  const baseAvg = (p.goGo + p.slowGo) / 2;
+  const p10Vals = result.pctPaths[10];
+  const p10End = p10Vals[p10Vals.length - 1];
+  let dwz = '';
+
+  if (mode === 'fixed') {
+    if (result.successRate < 50) {
+      dwz = '⚠ 固定支出：成功率仅 ' + result.successRate.toFixed(0) + '%，资金大概率提前耗尽，P10 期末余额 ¥' + Math.round(p10End) + 'w。建议降低支出、延后退休或切换动态支出模式。';
+    } else if (medEnd <= 5) {
+      dwz = '固定支出：中位期末余额 ¥' + Math.round(medEnd) + 'w，Die with Zero 匹配度极高。成功率 ' + result.successRate.toFixed(0) + '%，P10 最差情形剩 ¥' + Math.round(p10End) + 'w。';
+    } else if (medEnd <= 50) {
+      dwz = '固定支出：中位期末余额 ¥' + Math.round(medEnd) + 'w，接近 Die with Zero。成功率 ' + result.successRate.toFixed(0) + '%，P10 最差 ¥' + Math.round(p10End) + 'w。可切换动态支出降低本金需求。';
+    } else {
+      dwz = '固定支出：中位期末余额 ¥' + Math.round(medEnd) + 'w，剩较多。成功率 ' + result.successRate.toFixed(0) + '%，P10 最差 ¥' + Math.round(p10End) + 'w。切换动态支出可降低本金需求 ' + (Math.round(medEnd / 5 > 100 ? 100 : medEnd / 5)) + 'w+。';
+    }
+  } else {
+    const vsAvg = ((p50Spend - baseAvg) / baseAvg * 100).toFixed(1);
+    const sign = vsAvg > 0 ? '↑ 多花' : '↓ 少花';
+    if (result.successRate < 50) {
+      dwz = '⚠ 动态支出：成功率 ' + result.successRate.toFixed(0) + '%，中位期末 ¥' + Math.round(medEnd) + 'w。参数组合可能仍需调整。';
+    } else if (medEnd <= 10) {
+      dwz = '动态支出：中位期末余额 ¥' + Math.round(medEnd) + 'w，近乎完美 Die with Zero。成功率 ' + result.successRate.toFixed(0) + '%，年均支出 ¥' + p50Spend.toFixed(1) + 'w（' + sign + ' ' + Math.abs(vsAvg) + '% vs 固定基准），熊市少卖保护了本金。';
+    } else {
+      dwz = '动态支出：中位期末余额 ¥' + Math.round(medEnd) + 'w，成功率 ' + result.successRate.toFixed(0) + '%，年均支出 ¥' + p50Spend.toFixed(1) + 'w（' + sign + ' ' + Math.abs(vsAvg) + '% vs 固定基准）。Guardrails ' + (p.guardrail * 100).toFixed(0) + '% / 调整 ' + (p.flex * 100).toFixed(0) + '%。若希望更接近归零，可增大 Adjustment rate 或在 Dynamic 下降低本金。';
+    }
+  }
+  $('dwzText').textContent = dwz;
+
+  drawChart(p, result);
+}
+
+setTimeout(update, 100);
+</script>
+</body>
+</html>
