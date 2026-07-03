@@ -1,0 +1,402 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>退休追踪器</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; background: #0a0a0f; color: #fff; padding: 24px; }
+  .container { max-width: 1100px; margin: 0 auto; }
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 4px; background: linear-gradient(90deg, #6366f1, #06b6d4); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { font-size: 13px; color: #666; margin-bottom: 24px; }
+
+  .card { background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+  .card h2 { font-size: 13px; font-weight: 600; color: #888; margin-bottom: 14px; text-transform: uppercase; letter-spacing: 0.5px; border-bottom: 1px solid #1a1a28; padding-bottom: 10px; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px,1fr)); gap: 12px; }
+  .fld label { display: block; font-size: 11px; color: #666; margin-bottom: 3px; }
+  .fld input { width: 100%; padding: 7px 10px; background: #1e1e2a; border: 1px solid #2a2a3a; border-radius: 6px; color: #fff; font-size: 13px; }
+  .fld input:focus { outline: none; border-color: #6366f1; }
+  .fld .ro { font-size: 14px; font-weight: 600; color: #ccc; padding: 4px 0; }
+
+  .btn { padding: 9px 24px; border: none; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn-primary { background: linear-gradient(135deg,#6366f1,#8b5cf6); color: #fff; }
+  .btn-success { background: linear-gradient(135deg,#10b981,#34d399); color: #fff; }
+  .btn-danger { background: linear-gradient(135deg,#ef4444,#f87171); color: #fff; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-top: 14px; }
+
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; }
+  .tag-ok { background: rgba(52,211,153,0.15); color: #34d399; }
+  .tag-warn { background: rgba(251,146,60,0.15); color: #fb923c; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 8px; }
+  th { text-align: left; padding: 6px; color: #555; font-weight: 500; border-bottom: 1px solid #1a1a28; font-size: 11px; }
+  td { padding: 6px; border-bottom: 1px solid #151520; font-variant-numeric: tabular-nums; }
+  tr.past td { color: #999; }
+  tr.now td { background: rgba(99,102,241,0.04); }
+  tr.now td:first-child { border-left: 2px solid #6366f1; }
+  tr.now input { width: 100%; padding: 3px 5px; background: transparent; border: none; border-bottom: 1px solid #6366f1; color: #fff; font-size: 12px; }
+  tr.now input:focus { outline: none; }
+
+  .rc { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px,1fr)); gap: 10px; margin-top: 10px; }
+  .rci { background: #1a1a28; border-radius: 8px; padding: 12px; text-align: center; }
+  .rci .l { font-size: 10px; color: #666; margin-bottom: 3px; text-transform: uppercase; }
+  .rci .n { font-size: 18px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .rci .n.p { color: #a78bfa; } .rci .n.g { color: #34d399; } .rci .n.o { color: #fb923c; } .rci .n.t { color: #2dd4bf; }
+  .rci .u { font-size: 10px; color: #555; margin-top: 2px; }
+
+  .rec { background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2); border-radius: 8px; padding: 12px 16px; margin-top: 12px; font-size: 12px; color: #6ee7b7; line-height: 1.6; }
+
+  .chart-wrap { background: #12121a; border: 1px solid #1e1e2a; border-radius: 12px; padding: 16px; }
+  .chart-wrap canvas { width: 100% !important; height: 300px !important; }
+
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin-top: 10px; font-size: 11px; color: #888; }
+  .legend-item { display: flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 14px; height: 3px; border-radius: 1px; }
+
+  .empty { text-align: center; color: #555; padding: 30px; font-size: 13px; }
+
+  .param-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px,1fr)); gap: 8px; }
+  .param-item { font-size: 12px; }
+  .param-item .pl { color: #666; }
+  .param-item .pv { color: #ddd; font-weight: 600; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Retirement Tracker</h1>
+  <div class="sub">设定初始计划 → 每年输入实际数据 → 对比预期 vs 实际</div>
+
+  <!-- === 设置面板 === -->
+  <div class="card" id="setupCard">
+    <h2>退休计划参数</h2>
+    <div class="grid">
+      <div class="fld"><label>退休年龄</label><input id="age" value="46"></div>
+      <div class="fld"><label>预期寿命</label><input id="life" value="78"></div>
+      <div class="fld"><label>初始本金 (万)</label><input id="principal" value="300"></div>
+      <div class="fld"><label>现金桶 (万)</label><input id="cash" value="4.5"></div>
+      <div class="fld"><label>Go-Go 年支出 (万)</label><input id="goGo" value="9"></div>
+      <div class="fld"><label>Slow-Go 年支出 (万)</label><input id="slowGo" value="6"></div>
+      <div class="fld"><label>股息率 (%)</label><input id="divYield" value="1"></div>
+      <div class="fld"><label>通胀率 (%)</label><input id="inflation" value="3"></div>
+      <div class="fld"><label>资本收益率 (%)</label><input id="gain" value="10"></div>
+      <div class="fld"><label>波动率 (%)</label><input id="vol" value="25"></div>
+      <div class="fld"><label>养老金 (万/年)</label><input id="pension" value="5"></div>
+      <div class="fld"><label>养老金开始年龄</label><input id="pensionStart" value="60"></div>
+    </div>
+    <div class="row"><button class="btn btn-primary" onclick="start()">生成初始计划</button></div>
+  </div>
+
+  <!-- === 追踪面板（隐藏到设置提交后） === -->
+  <div id="trackArea" style="display:none">
+
+    <!-- 参数摘要（只读） -->
+    <div class="card">
+      <h2>初始参数 · 退休第 <span id="yrLabel">1</span> 年 · 当前 <span id="ageLabel">46</span> 岁</h2>
+      <div class="param-grid" id="paramSummary"></div>
+    </div>
+
+    <!-- 图表 -->
+    <div class="card">
+      <h2>计划 vs 实际</h2>
+      <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      <div class="legend" id="chartLegend">
+        <div class="legend-item"><span class="legend-dot" style="background:rgba(255,255,255,0.25);border:1px dashed rgba(255,255,255,0.3)"></span>初始计划 P50</div>
+        <div class="legend-item"><span class="legend-dot" style="background:rgba(255,255,255,0.08)"></span>初始计划 P10-P90</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#6366f1"></span>实际轨迹</div>
+        <div class="legend-item"><span class="legend-dot" style="background:#34d399"></span>修正后 P50</div>
+        <div class="legend-item"><span class="legend-dot" style="background:rgba(236,72,153,0.4)"></span>修正后 P10-P90</div>
+      </div>
+    </div>
+
+    <!-- 年度追踪 -->
+    <div class="card">
+      <h2>年度追踪记录</h2>
+      <div style="overflow-x:auto"><table><thead><tr>
+        <th>#</th><th>年龄</th><th>年初投资</th><th>年初现金</th>
+        <th>涨跌幅</th><th>支出</th><th>股息</th><th>养老金</th>
+        <th>年末投资</th><th>年末现金</th><th>偏离计划</th>
+      </tr></thead><tbody id="tbody"></tbody></table></div>
+      <div class="row">
+        <button class="btn btn-success" onclick="submitYear()">✓ 提交本年度</button>
+        <button class="btn btn-danger" onclick="resetAll()">重置</button>
+      </div>
+    </div>
+
+    <!-- 建议 -->
+    <div class="card">
+      <h2>最新建议</h2>
+      <div class="rc" id="adviceRc"><div class="empty">提交年度数据后生成建议</div></div>
+      <div class="rec" id="recText">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+let chart = null, data = null;
+
+function $(id) { return document.getElementById(id); }
+
+function randn() {
+  let u=0,v=0; while(u===0) u=Math.random(); while(v===0) v=Math.random();
+  return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v);
+}
+
+function bs(age, c) { return age <= (c.age + c.life) / 2 ? c.goGo : c.slowGo; }
+function is(age, c) { return bs(age, c) * Math.pow(1 + c.inflation, age - c.age); }
+
+function start() {
+  const c = {
+    age: +$('age').value, life: +$('life').value,
+    gain: +$('gain').value / 100, vol: +$('vol').value / 100,
+    goGo: +$('goGo').value, slowGo: +$('slowGo').value,
+    divYield: +$('divYield').value / 100, inflation: +$('inflation').value / 100,
+    pension: +$('pension').value, pensionStart: +$('pensionStart').value,
+    initialPrincipal: +$('principal').value, initialCash: +$('cash').value
+  };
+  data = { cfg: c, years: [], initialPlan: calcPlan(c) };
+
+  // Read-only param summary
+  $('paramSummary').innerHTML = `
+    <div class="param-item"><span class="pl">本金</span> <span class="pv">${c.initialPrincipal}w</span></div>
+    <div class="param-item"><span class="pl">现金桶</span> <span class="pv">${c.initialCash}w</span></div>
+    <div class="param-item"><span class="pl">预期收益</span> <span class="pv">${c.goGo}w/${c.slowGo}w</span></div>
+    <div class="param-item"><span class="pl">股息率</span> <span class="pv">${(c.divYield*100).toFixed(1)}%</span></div>
+    <div class="param-item"><span class="pl">通胀</span> <span class="pv">${(c.inflation*100).toFixed(1)}%</span></div>
+    <div class="param-item"><span class="pl">资本收益率</span> <span class="pv">${(c.gain*100).toFixed(1)}%</span></div>
+    <div class="param-item"><span class="pl">波动率</span> <span class="pv">${(c.vol*100).toFixed(0)}%</span></div>
+    <div class="param-item"><span class="pl">养老金</span> <span class="pv">${c.pension}w @ ${c.pensionStart}岁</span></div>
+  `;
+
+  addYear(true);
+  drawChart();
+  updateUI();
+
+  $('setupCard').style.display = 'none';
+  $('trackArea').style.display = '';
+}
+
+function calcPlan(c) {
+  const SIMS = 300, Y = c.life - c.age, divB = c.initialPrincipal * c.divYield;
+  const yp = Array.from({length: Y+1}, () => []);
+  for (let s = 0; s < SIMS; s++) {
+    let inv = c.initialPrincipal, ca = c.initialCash;
+    yp[0].push(inv + ca);
+    for (let y = 0; y < Y; y++) {
+      const a = c.age + y;
+      const cg = randn() * c.vol + c.gain;
+      inv *= (1 + cg);
+      ca = ca * 1.02 + divB * Math.pow(1 + c.inflation, y) + (a >= c.pensionStart ? c.pension : 0) - is(a, c);
+      if (ca < 0) { inv += ca; ca = 0; }
+      yp[y+1].push(Math.max(0, inv + ca));
+      if (inv <= 0) { for (let yy = y+1; yy <= Y; yy++) yp[yy].push(0); break; }
+    }
+  }
+  const r = {};
+  [10,25,50,75,90].forEach(p => {
+    r[p] = yp.map(a => { const s=[...a].sort((a,b)=>a-b); return s[Math.min(Math.floor(s.length*p/100),s.length-1)]; });
+  });
+  return r;
+}
+
+function addYear(editable) {
+  const idx = data.years.length, prev = idx === 0 ? null : data.years[idx-1];
+  const age = data.cfg.age + idx;
+  const divB = data.cfg.initialPrincipal * data.cfg.divYield;
+  data.years.push({
+    no: idx+1, age,
+    startInv: prev ? prev.endInv : data.cfg.initialPrincipal,
+    startCash: prev ? prev.endCash : data.cfg.initialCash,
+    ret: null, spend: null, div: null,
+    pens: age >= data.cfg.pensionStart ? data.cfg.pension : 0,
+    endInv: 0, endCash: 0, editable
+  });
+  renderTable();
+}
+
+function renderTable() {
+  const tb = $('tbody'); tb.innerHTML = '';
+  data.years.forEach(r => {
+    const tr = document.createElement('tr'); tr.className = r.editable ? 'now' : 'past';
+    const planAt = data.initialPlan[50][r.no] || 0;
+    const actual = r.editable ? 0 : (r.endInv + r.endCash);
+    const dev = planAt > 0 && !r.editable ? ((actual - planAt) / planAt * 100).toFixed(1) + '%' : '—';
+    tr.innerHTML = [
+      r.no, r.age,
+      r.startInv.toFixed(1), r.startCash.toFixed(1),
+      r.editable ? `<input id="ret_${r.no}" placeholder="%">` : (r.ret != null ? r.ret + '%' : '—'),
+      r.editable ? `<input id="spd_${r.no}" placeholder="万">` : (r.spend != null ? r.spend.toFixed(1) : '—'),
+      r.editable ? `<input id="div_${r.no}" placeholder="万">` : (r.div != null ? r.div.toFixed(1) : '—'),
+      r.editable ? `<input id="pens_${r.no}" placeholder="万" value="${r.pens}">` : r.pens.toFixed(1),
+      r.editable ? '—' : r.endInv.toFixed(1),
+      r.editable ? '—' : r.endCash.toFixed(1),
+      dev
+    ].map(c => `<td>${c}</td>`).join('');
+    tb.appendChild(tr);
+  });
+}
+
+function submitYear() {
+  const last = data.years[data.years.length - 1];
+  if (!last.editable) return;
+  const ret = parseFloat($('ret_'+last.no)?.value);
+  const spd = parseFloat($('spd_'+last.no)?.value);
+  const div = parseFloat($('div_'+last.no)?.value);
+  const pens = parseFloat($('pens_'+last.no)?.value) || last.pens;
+  if (isNaN(ret) || isNaN(spd) || isNaN(div)) { alert('请填写涨跌幅、支出和股息'); return; }
+
+  let inv = last.startInv * (1 + ret/100);
+  let ca = last.startCash * 1.02 + div + pens - spd;
+  if (ca < 0) { inv += ca; ca = 0; }
+  const tgt = data.cfg.initialCash * Math.pow(1 + data.cfg.inflation, last.no - 1);
+  if (ret > 0 && ca < tgt && inv > 0) {
+    const rf = Math.min(tgt - ca, inv * 0.15);
+    ca += rf; inv -= rf;
+  }
+  last.ret = ret; last.spend = spd; last.div = div; last.pens = pens;
+  last.endInv = Math.max(0, inv); last.endCash = Math.max(0, ca);
+  last.editable = false;
+
+  addYear(true);
+  renderTable();
+  updateUI();
+  drawChart();
+}
+
+function drawChart() {
+  if (chart) chart.destroy();
+  const c = data.cfg, ip = data.initialPlan;
+  const P = ip[50].length - 1;
+  const labels = Array.from({length: P+1}, (_,i) => c.age + i);
+
+  // Actual data
+  const done = data.years.filter(y => !y.editable);
+  const actual = [data.cfg.initialPrincipal + data.cfg.initialCash];
+  done.forEach(y => actual.push(y.endInv + y.endCash));
+  while (actual.length <= P) actual.push(null);
+
+  // Forward projection from current position
+  const latest = done[done.length - 1];
+  let fwdP10 = [], fwdP25 = [], fwdP50 = [], fwdP75 = [], fwdP90 = [];
+  if (latest) {
+    const fY = P - done.length;
+    const fp = Array.from({length: fY+1}, () => []);
+    const divB = c.initialPrincipal * c.divYield;
+    const SIMS = 200;
+    for (let s = 0; s < SIMS; s++) {
+      let inv = latest.endInv, ca = latest.endCash;
+      fp[0].push(inv+ca);
+      for (let y = 0; y < fY; y++) {
+        const a = latest.age + y;
+        const cg = randn() * c.vol + c.gain;
+        inv *= (1+cg);
+        ca = ca*1.02 + divB*Math.pow(1+c.inflation, done.length + y) + (a >= c.pensionStart ? c.pension : 0) - is(a, c);
+        if (ca < 0) { inv += ca; ca = 0; }
+        fp[y+1].push(Math.max(0, inv+ca));
+        if (inv <= 0) { for (let yy=y+1; yy<=fY; yy++) fp[yy].push(0); break; }
+      }
+    }
+    const pct = (arr,p) => { const s=[...arr].sort((a,b)=>a-b); return s[Math.min(Math.floor(s.length*p/100),s.length-1)]; };
+    fwdP10 = fp.map(a => pct(a,10)); fwdP25 = fp.map(a => pct(a,25));
+    fwdP50 = fp.map(a => pct(a,50)); fwdP75 = fp.map(a => pct(a,75));
+    fwdP90 = fp.map(a => pct(a,90));
+  }
+
+  const n = (cnt) => { const r = []; for (let i = 0; i < cnt; i++) r.push(null); return r; };
+
+  const ctx = $('chart').getContext('2d');
+  chart = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        // Initial plan (gray theme, P10-P90 filled band + P50 dashed line)
+        { label: '初始 P10', data: ip[10], borderColor: 'rgba(255,255,255,0)', backgroundColor: 'rgba(255,255,255,0.04)', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 0 },
+        { label: '初始 P90', data: ip[90], borderColor: 'rgba(255,255,255,0)', backgroundColor: 'rgba(255,255,255,0.04)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 0 },
+        { label: '初始 P50', data: ip[50], borderColor: 'rgba(255,255,255,0.35)', backgroundColor: 'transparent', fill: false, tension: 0.3, pointRadius: 0, borderWidth: 1.5, borderDash: [4,4] },
+
+        // Actual (purple)
+        { label: '实际轨迹', data: actual, borderColor: '#6366f1', backgroundColor: 'rgba(99,102,241,0.12)', fill: true, tension: 0.3, pointRadius: 3, pointBackgroundColor: '#6366f1', borderWidth: 2.5 },
+
+        // Updated projection (colored fan)
+        { label: '修正 P90', data: [...n(done.length), ...fwdP90.slice(1)], borderColor: 'rgba(236,72,153,0.3)', backgroundColor: 'rgba(236,72,153,0.1)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1, borderDash: [3,3] },
+        { label: '修正 P75', data: [...n(done.length), ...fwdP75.slice(1)], borderColor: 'rgba(236,72,153,0.4)', backgroundColor: 'rgba(236,72,153,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1, borderDash: [3,3] },
+        { label: '修正 P50', data: [...n(done.length), ...fwdP50.slice(1)], borderColor: '#34d399', backgroundColor: 'rgba(52,211,153,0.2)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 2.5, borderDash: [5,3] },
+        { label: '修正 P25', data: [...n(done.length), ...fwdP25.slice(1)], borderColor: 'rgba(59,130,246,0.4)', backgroundColor: 'rgba(59,130,246,0.15)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1, borderDash: [3,3] },
+        { label: '修正 P10', data: [...n(done.length), ...fwdP10.slice(1)], borderColor: 'rgba(59,130,246,0.3)', backgroundColor: 'rgba(59,130,246,0.1)', fill: '-1', tension: 0.3, pointRadius: 0, borderWidth: 1, borderDash: [3,3] },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 } } },
+        y: { grid: { color: 'rgba(255,255,255,0.03)' }, ticks: { color: '#666', font: { size: 10 }, callback: v => '¥' + v + 'w' }, beginAtZero: true }
+      }
+    }
+  });
+}
+
+function updateUI() {
+  const last = data.years[data.years.length - 1];
+  $('yrLabel').textContent = last.no; $('ageLabel').textContent = last.age;
+  const done = data.years.filter(y => !y.editable);
+  const latest = done[done.length - 1];
+  if (!latest) return;
+
+  const c = data.cfg;
+  const total = latest.endInv + latest.endCash;
+  const planAt = data.initialPlan[50][latest.age - c.age] || total;
+  const vsPlan = ((total - planAt) / planAt * 100).toFixed(1);
+  const p50 = data.initialPlan[50][data.initialPlan[50].length - 1] || 0;
+
+  // Forward MC
+  const Y = c.life - latest.age; const divB = c.initialPrincipal * c.divYield;
+  const ends = []; const SIMS = 400;
+  for (let s = 0; s < SIMS; s++) {
+    let inv = latest.endInv, ca = latest.endCash, ok = true;
+    for (let y = 0; y < Y; y++) {
+      const a = latest.age + y, cg = randn() * c.vol + c.gain;
+      inv *= (1+cg); ca = ca*1.02 + divB*Math.pow(1+c.inflation, y) + (a >= c.pensionStart ? c.pension : 0) - is(a,c);
+      if (ca < 0) { inv += ca; ca = 0; }
+      if (inv <= 0) { ok = false; break; }
+    }
+    ends.push({ t: Math.max(0, inv+ca), ok });
+  }
+  ends.sort((a,b) => a.t - b.t);
+  const sr = ends.filter(e => e.ok).length / SIMS * 100;
+  const tgtCash = c.initialCash * Math.pow(1 + c.inflation, latest.no - 1);
+  const cashOk = latest.endCash >= tgtCash * 0.8 ? '充足' : (latest.endCash > 0 ? '偏低' : '耗尽');
+  const recSpd = Math.min(is(latest.age+1,c)*1.05, Math.max(is(latest.age+1,c)*0.85, Math.max(latest.spend*0.9, is(latest.age+1,c)*0.75)));
+
+  $('adviceRc').innerHTML = `
+    <div class="rci"><div class="l">当前总资产</div><div class="n p">${total.toFixed(1)}</div><div class="u">万元</div></div>
+    <div class="rci"><div class="l">vs 初始 P50</div><div class="n ${+vsPlan>=0?'g':'o'}">${vsPlan}%</div><div class="u">初始预期 ¥${planAt.toFixed(0)}w</div></div>
+    <div class="rci"><div class="l">模拟成功率</div><div class="n ${sr>=80?'g':'o'}">${sr.toFixed(0)}%</div><div class="u">中位期末¥${ends[Math.floor(SIMS/2)].t.toFixed(0)}w</div></div>
+    <div class="rci"><div class="l">建议明年支出</div><div class="n t">${recSpd.toFixed(1)}</div><div class="u">万元/年</div></div>
+    <div class="rci"><div class="l">现金桶</div><div class="n ${cashOk==='充足'?'g':'o'}">${cashOk}</div><div class="u">目标${tgtCash.toFixed(1)}w·现${latest.endCash.toFixed(1)}w</div></div>
+  `;
+
+  let txt = `当前 ¥${total.toFixed(1)}w，初始 P50 同期预期 ¥${planAt.toFixed(1)}w（${vsPlan}%）。`;
+  if (total < c.initialPrincipal * 0.6) txt += ` ⚠ 缩水超 40%，建议支出 ≤¥${recSpd.toFixed(1)}w。`;
+  else if (total < c.initialPrincipal * 0.8) txt += ` 低于预期，建议支出 ¥${recSpd.toFixed(1)}w。`;
+  else if (total >= planAt * 1.05) txt += ` 超预期，` + (cashOk==='充足'?'可适度提高支出。':'建议补满现金桶。');
+  else txt += ` 与预期基本一致。`;
+  if (sr < 70) txt += ` ⚠ 成功率仅 ${sr.toFixed(0)}%，需评估调整。`;
+  else if (sr >= 90) txt += ` ✅ 成功率 ${sr.toFixed(0)}%，稳健。`;
+  $('recText').textContent = txt;
+}
+
+function resetAll() {
+  if (!confirm('重置将清除所有数据，确定？')) return;
+  if (chart) { chart.destroy(); chart = null; }
+  data = null;
+  $('setupCard').style.display = '';
+  $('trackArea').style.display = 'none';
+  $('tbody').innerHTML = '';
+}
+</script>
+</body>
+</html>
